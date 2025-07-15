@@ -24,7 +24,7 @@ export default function HomePage() {
     const userMessage = { role: "user", content: input };
     const placeholderReply = {
       role: "assistant",
-      content: "Great question — give me a second to think that through...",
+      content: "Thinking...",
       loading: true,
     };
 
@@ -42,9 +42,10 @@ export default function HomePage() {
       const data = await res.json();
 
       if (data.response) {
+        const shortReply = data.response.length > 300 ? data.response.slice(0, 300) + "..." : data.response;
         setMessages((prev) => [
           ...prev.slice(0, -1),
-          { role: "assistant", content: data.response },
+          { role: "assistant", content: shortReply },
         ]);
         setThreadId(data.threadId);
       } else {
