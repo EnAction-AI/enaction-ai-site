@@ -2,6 +2,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   const { message, threadId } = req.body;
+
   const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
   const ASSISTANT_ID = process.env.OPENAI_ASSISTANT_ID;
   const WEBHOOK_URL = "https://eo7zgg7h6b8dayi.m.pipedream.net";
@@ -20,13 +21,11 @@ export default async function handler(req, res) {
         headers: {
           Authorization: `Bearer ${OPENAI_API_KEY}`,
           'OpenAI-Beta': 'assistants=v2',
-          'Content-Type': 'application/json'
-        }
+          'Content-Type': 'application/json',
+        },
       });
-
       const threadData = await threadRes.json();
       thread = threadData.id;
-      console.log("✅ Thread created:", thread);
     }
 
     // Step 2: Add message to thread
@@ -35,15 +34,10 @@ export default async function handler(req, res) {
       headers: {
         Authorization: `Bearer ${OPENAI_API_KEY}`,
         'OpenAI-Beta': 'assistants=v2',
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        role: "user",
-        content: message
-      })
+      body: JSON.stringify({ role: "user", content: message }),
     });
-
-    console.log("✅ Message sent");
 
     // Step 3: Run the assistant
     const runRes = await fetch(`https://api.openai.com/v1/threads/${thread}/runs`, {
@@ -51,65 +45,58 @@ export default async function handler(req, res) {
       headers: {
         Authorization: `Bearer ${OPENAI_API_KEY}`,
         'OpenAI-Beta': 'assistants=v2',
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ assistant_id: ASSISTANT_ID })
+      body: JSON.stringify({ assistant_id: ASSISTANT_ID }),
     });
 
     const runData = await runRes.json();
-    console.log("✅ Run started:", runData.id);
 
-    // Step 4: Poll until run completes
+    // Step 4: Poll for completion
     let runStatus;
     do {
-      await new Promise(r => setTimeout(r, 1000));
-      const runStatusRes = await fetch(`https://api.openai.com/v1/threads/${thread}/runs/${runData.id}`, {
+      await new Promise((r) => setTimeout(r, 1000));
+      const statusRes = await fetch(`https://api.openai.com/v1/threads/${thread}/runs/${runData.id}`, {
         headers: {
           Authorization: `Bearer ${OPENAI_API_KEY}`,
-          'OpenAI-Beta': 'assistants=v2'
-        }
+          'OpenAI-Beta': 'assistants=v2',
+        },
       });
-      runStatus = await runStatusRes.json();
-      console.log("⏳ Polling run status:", runStatus.status);
+      runStatus = await statusRes.json();
     } while (runStatus.status !== 'completed');
 
-    // Step 5: Get assistant's reply
-    const messagesRes = await fetch(`https://api.openai.com/v1/threads/${thread}/messages`, {
+    // Step 5: Get the assistant reply
+    const msgRes = await fetch(`https://api.openai.com/v1/threads/${thread}/messages`, {
       headers: {
         Authorization: `Bearer ${OPENAI_API_KEY}`,
-        'OpenAI-Beta': 'assistants=v2'
-      }
+        'OpenAI-Beta': 'assistants=v2',
+      },
     });
 
-    const messagesData = await messagesRes.json();
-    const reply = messagesData.data[0]?.content?.[0]?.text?.value || "Sorry, I didn’t get a reply.";
+    const messagesData = await msgRes.json();
+    const reply = messagesData.data[0]?.content?.[0]?.text?.value || "Sorry, no reply found.";
 
-    console.log("✅ Assistant reply:", reply);
-
-    // Step 6: Extract contact info using regex
-    const nameMatch = reply.match(/name[:\-]?\s*([^\n\r]+)/i);
-    const emailMatch = reply.match(/email[:\-]?\s*([\w.-]+@[\w.-]+\.\w+)/i);
-    const phoneMatch = reply.match(/phone[:\-]?\s*([^\n\r]+)/i);
-    const companyMatch = reply.match(/company[:\-]?\s*([^\n\r]+)/i);
-    const smsConsentMatch = reply.match(/sms[:\-]?\s*(yes|no)/i);
+    // Step 6: Try to extract lead info
+    const nameMatch = message.match(/name is (\w+)/i);
+    const emailMatch = message.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i);
+    const phoneMatch = message.match(/(\+?\d{10,})/);
+    const companyMatch = message.match(/(?:at|from)\s([A-Z][a-zA-Z0-9& ]+)/i);
 
     const lead = {
-      name: nameMatch?.[1]?.trim() || "",
-      email: emailMatch?.[1]?.trim() || "",
-      phone: phoneMatch?.[1]?.trim() || "",
-      company: companyMatch?.[1]?.trim() || "",
-      sms_consent: smsConsentMatch?.[1]?.toLowerCase() === "yes" ? "Yes" : "No",
-      timestamp: new Date().toISOString()
+      name: nameMatch?.[1] || "",
+      email: emailMatch?.[0] || "",
+      phone: phoneMatch?.[1] || "",
+      company: companyMatch?.[1] || "",
+      message,
+      timestamp: new Date().toISOString(),
     };
 
-    // If at least one field exists, send it to Pipedream
-    const hasLead = lead.name || lead.email || lead.phone || lead.company;
-    if (hasLead) {
-      console.log("📤 Sending lead to webhook:", lead);
+    // Step 7: Only send to webhook if some lead info is present
+    if (lead.name || lead.email || lead.phone || lead.company) {
       await fetch(WEBHOOK_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(lead)
+        body: JSON.stringify(lead),
       });
     }
 
