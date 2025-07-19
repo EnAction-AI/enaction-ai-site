@@ -42,10 +42,10 @@ export default function HomePage() {
       const data = await res.json();
 
       if (data.response) {
-        const shortReply = data.response.length > 300 ? data.response.slice(0, 300) + "..." : data.response;
+        const shortened = data.response.split("\n").filter(Boolean)[0].slice(0, 300);
         setMessages((prev) => [
           ...prev.slice(0, -1),
-          { role: "assistant", content: shortReply },
+          { role: "assistant", content: shortened.endsWith(".") ? shortened : shortened + "." },
         ]);
         setThreadId(data.threadId);
       } else {
@@ -119,7 +119,7 @@ export default function HomePage() {
           ))}
           {loading && (
             <div className="text-left text-sm text-gray-400 animate-pulse">
-              Ena is typing<span className="animate-bounce">...</span>
+              Thinking...
             </div>
           )}
           <div ref={chatBottomRef} />
