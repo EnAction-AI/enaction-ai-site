@@ -43,13 +43,17 @@ export default function HomePage() {
 
       if (data.response) {
         const lines = data.response.split(/\n{2,}/);
-        const replies = lines.map((line) => ({ role: "assistant", content: line.trim() })).filter((r) => r.content);
+        const replies = lines
+          .map((line) => ({ role: "assistant", content: line.trim() }))
+          .filter((r) => r.content);
 
         setMessages((prev) => [...prev.slice(0, -1), ...replies]);
         setThreadId(data.threadId);
 
-        // Trigger demo simulation if lead data was just captured
-        if (data.response.toLowerCase().includes("thanks") && data.response.toLowerCase().includes("info")) {
+        if (
+          data.response.toLowerCase().includes("thanks") &&
+          data.response.toLowerCase().includes("info")
+        ) {
           const demoIntro = {
             role: "assistant",
             content:
@@ -131,7 +135,9 @@ export default function HomePage() {
 
       <section className="py-12 bg-blue-50 text-center">
         <h2 className="text-3xl font-bold mb-4">Let’s Bring AI to Your Business</h2>
-        <p className="mb-6">QR codes. Website embeds. Facebook Messenger. However they find you, we’ll help convert them.</p>
+        <p className="mb-6">
+          QR codes. Website embeds. Facebook Messenger. However they find you, we’ll help convert them.
+        </p>
         <a
           href="mailto:hello@enaction.ai"
           className="inline-block bg-blue-600 text-white px-6 py-3 rounded-2xl text-lg font-medium shadow hover:bg-blue-700"
@@ -140,11 +146,24 @@ export default function HomePage() {
         </a>
       </section>
 
-      <div className="fixed bottom-6 right-6 bg-white border border-gray-300 rounded-lg shadow-lg w-96 max-w-full p-4">
-        <div className="h-64 overflow-y-auto border-b pb-2 mb-2">
+      {/* 💬 Chatbot UI */}
+      <div className="fixed bottom-6 right-6 w-96 max-w-full p-0 rounded-xl shadow-2xl border-2 border-blue-500 bg-white flex flex-col overflow-hidden z-50">
+        {/* Header */}
+        <div className="bg-blue-500 text-white text-center font-semibold py-2 text-lg">
+          Enaction.AI
+        </div>
+
+        {/* Messages */}
+        <div className="h-[400px] overflow-y-auto px-4 py-3 border-b">
           {messages.map((msg, i) => (
             <div key={i} className={`mb-2 ${msg.role === "user" ? "text-right" : "text-left"}`}>
-              <span className={`inline-block px-3 py-2 rounded-lg text-sm whitespace-pre-wrap ${msg.role === "user" ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"}`}>
+              <span
+                className={`inline-block px-3 py-2 rounded-lg text-sm whitespace-pre-wrap ${
+                  msg.role === "user"
+                    ? "bg-blue-100 text-blue-800"
+                    : "bg-gray-100 text-gray-800"
+                }`}
+              >
                 {msg.content}
               </span>
             </div>
@@ -156,10 +175,12 @@ export default function HomePage() {
           )}
           <div ref={chatBottomRef} />
         </div>
-        <div className="flex">
+
+        {/* Input */}
+        <div className="flex p-3">
           <input
             type="text"
-            className="flex-grow border rounded-l-lg px-3 py-2 text-sm"
+            className="flex-grow border rounded-l-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Ask Ena a question..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
