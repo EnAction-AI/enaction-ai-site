@@ -4,9 +4,11 @@ export default function HomePage() {
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      content: "Hi, I’m Ena. Ask me what EnAction.ai can do for your business.",
+      content:
+        "Hi, I’m Ena. I help small businesses turn website visitors into leads, bookings, and follow-ups. What kind of business do you run?",
     },
   ]);
+
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -14,7 +16,9 @@ export default function HomePage() {
     if (!input.trim()) return;
 
     const userMessage = { role: "user", content: input };
-    setMessages((prev) => [...prev, userMessage]);
+    const updatedMessages = [...messages, userMessage];
+
+    setMessages(updatedMessages);
     setInput("");
     setLoading(true);
 
@@ -22,7 +26,10 @@ export default function HomePage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: input }),
+        body: JSON.stringify({
+          message: input,
+          messages: updatedMessages,
+        }),
       });
 
       const data = await res.json();
@@ -106,13 +113,6 @@ export default function HomePage() {
             </button>
           </div>
         </div>
-
-        <a
-          href="mailto:hello@enaction.ai"
-          className="inline-block mt-8 bg-blue-600 text-white px-6 py-3 rounded-xl font-semibold"
-        >
-          Contact Us
-        </a>
       </main>
     </div>
   );
