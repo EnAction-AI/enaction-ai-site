@@ -14,12 +14,12 @@ export default async function handler(req, res) {
   const businessInfo = `
 Business Name: EnAction.ai
 Services: AI chatbots and AI agents for small businesses
-Pricing: $100 setup and $75/month for the starter chatbot
 Ideal Customers: Small businesses, service businesses, local companies, and companies that want better website lead capture
 Main Value: Turn website visitors into leads, quote requests, bookings, and follow-up opportunities
 Core Capabilities: Answer FAQs, capture leads, qualify prospects, guide booking requests, collect contact information, and notify the business
 What Makes It Different: Simple setup, no tech skills required, focused on real business outcomes like leads, bookings, and faster follow-up
 Agent Upgrade: AI agents can qualify, route, book, follow up, and trigger workflows when a company needs more than a basic chatbot
+Pricing Guidance: Do not proactively give exact pricing. EnAction.ai has options for different business sizes and needs.
 `;
 
   const instructions = `
@@ -33,13 +33,16 @@ Rules:
 3. Remember what the visitor already told you.
 4. Do not ask for information they already provided.
 5. Ask one question at a time.
-6. If they seem interested, collect name, email, phone, business name, and what they want the bot to help with.
+6. Focus on business outcomes: more leads, faster follow-up, better customer experience, less missed opportunity.
 7. Do not sound robotic.
 8. Do not over-explain.
-9. Tie answers back to business outcomes: more leads, faster follow-up, better customer experience, and less missed opportunity.
-10. If they give unclear answers, continue naturally.
-11. Do not mention OpenAI, code, APIs, or backend setup unless asked.
-12. When collecting lead info, naturally move to the next missing item only.
+9. If they seem interested, collect name, email, phone, business name, and what they want the bot to help with.
+10. When collecting info, move naturally to the next missing item only.
+11. Do NOT proactively mention pricing.
+12. If asked about pricing, say pricing depends on the business and what they need. Explain that EnAction.ai has options for different business sizes and offer to learn about their business first before giving specifics.
+13. Do not mention OpenAI, code, APIs, or backend setup unless asked.
+14. If doing a demo simulation as if you are the visitor's business chatbot, do not overwrite or confuse the real EnAction.ai lead capture info.
+15. In a demo simulation, clearly act as the visitor's business chatbot and answer based on the business details they gave. If the detail is not known, do not make it up. Ask a helpful follow-up or say the business can customize that answer.
 
 Business information:
 ${businessInfo}
@@ -81,12 +84,42 @@ ${businessInfo}
       data.output?.[0]?.content?.[0]?.text?.value ||
       "I got a response from OpenAI, but could not read it.";
 
-    const allText = messages.map((m) => m.content).join(" ");
+    const allText = messages.map((m) => m.content).join(" ") + " " + message;
 
     const emailMatch = allText.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i);
-    const phoneMatch = allText.match(/(\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/i);
-    const nameMatch = allText.match(/(?:my name is|name is|i am|i'm)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)/i);
-    const companyMatch = allText.match(/(?:company is|business is|from|at|own|run)\s+([a-zA-Z0-9&.' -]+)/i);
+
+    const phoneMatch = allText.match(
+      /(\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/i
+    );
+
+    let nameMatch = allText.match(
+      /(?:my name is|name is|i am|i'm)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)/i
+    );
+
+    if (!nameMatch) {
+      const possibleName = message.trim();
+      if (
+        possibleName.length < 30 &&
+        /^[A-Za-z]+(?:\s[A-Za-z]+)?$/.test(possibleName)
+      ) {
+        nameMatch = [null, possibleName];
+      }
+    }
+
+    let companyMatch = allText.match(
+      /(?:company is|business is|from|at|own|run)\s+([a-zA-Z0-9&.' -]+)/i
+    );
+
+    if (!companyMatch) {
+      const possibleCompany = message.trim();
+      if (
+        possibleCompany.length < 40 &&
+        /[A-Za-z]/.test(possibleCompany) &&
+        possibleCompany.split(" ").length >= 2
+      ) {
+        companyMatch = [null, possibleCompany];
+      }
+    }
 
     const lead = {
       name: nameMatch?.[1]?.trim() || "",
@@ -98,21 +131,7 @@ ${businessInfo}
       timestamp: new Date().toISOString(),
     };
 
-    const latestMessage = message.toLowerCase();
-
-    const latestMessageHasLeadInfo =
-      emailMatch?.[0]?.toLowerCase() === latestMessage ||
-      phoneMatch?.[1]?.toLowerCase() === latestMessage ||
-      latestMessage.includes("my name is") ||
-      latestMessage.includes("name is") ||
-      latestMessage.includes("i am") ||
-      latestMessage.includes("i'm") ||
-      latestMessage.includes("business") ||
-      latestMessage.includes("company") ||
-      latestMessage.includes("own") ||
-      latestMessage.includes("run");
-
-    if ((lead.email || lead.phone || lead.name || lead.company) && latestMessageHasLeadInfo) {
+    if (lead.name && lead.email && lead.phone) {
       try {
         await fetch(WEBHOOK_URL, {
           method: "POST",
