@@ -1,46 +1,19 @@
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return res.status(405).json({ response: "Method not allowed." });
   }
 
-  const { message } = req.body;
+  const { message } = req.body || {};
 
   if (!message) {
-    return res.status(400).json({ error: "Missing message" });
+    return res.status(400).json({ response: "Missing message." });
   }
 
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
-    return res.status(500).json({ error: "Missing OpenAI API key" });
+    return res.status(500).json({ response: "Missing OpenAI API key in Vercel." });
   }
-
-  const businessInfo = `
-Business Name: EnAction.ai
-What We Do: EnAction.ai builds AI chatbots and AI agents for small businesses.
-Primary Goal: Help businesses turn website visitors into leads, conversations, quote requests, bookings, and follow-up opportunities.
-Starter Offer: Custom website chatbot setup for small businesses.
-Core Capabilities: Answer FAQs, capture leads, qualify prospects, guide booking requests, collect contact information, and notify the business.
-Target Customers: Small businesses, service businesses, local companies, and companies that want better website lead capture.
-`;
-
-  const instructions = `
-You are Ena, the AI assistant for EnAction.ai.
-
-Use the business information below to answer questions.
-
-Your rules:
-1. Keep answers short, friendly, and helpful.
-2. Speak in simple business language.
-3. Do not make up company details.
-4. If you do not know something, say you are not sure and offer to collect the visitor's information.
-5. If someone seems interested, ask for their name, email, phone, business name, and what they want the bot to help with.
-6. Ask one question at a time when collecting information.
-7. Explain that EnAction.ai can build simple chatbots first, then upgrade to AI agents that can qualify, route, book, follow up, and trigger workflows.
-
-Business information:
-${businessInfo}
-`;
 
   try {
     const openaiRes = await fetch("https://api.openai.com/v1/responses", {
@@ -50,27 +23,41 @@ ${businessInfo}
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4.1-mini",
-        instructions,
-        input: message,
+        model: "gpt-4o-mini",
+        input: [
+          {
+            role: "system",
+            content:
+              "You are Ena, the AI assistant for EnAction.ai. EnAction.ai builds AI chatbots and AI agents for small businesses. Keep replies short, friendly, and helpful. Help visitors understand how website chat can capture leads, answer questions, qualify prospects, and guide bookings.",
+          },
+          {
+            role: "user",
+            content: message,
+          },
+        ],
       }),
     });
 
     const data = await openaiRes.json();
 
     if (!openaiRes.ok) {
-      console.error("OpenAI error:", data);
+      console.error("OpenAI error:", JSON.stringify(data, null, 2));
       return res.status(500).json({
-        error: "OpenAI request failed",
-        details: data,
+        response: `OpenAI error: ${data.error?.message || "Unknown error"}`,
       });
     }
 
-    return res.status(200).json({
-      response: data.output_text || "I had trouble reading the response.",
-    });
+    const reply =
+      data.output_text ||
+      data.output?.[0]?.content?.[0]?.text ||
+      data.output?.[0]?.content?.[0]?.text?.value ||
+      "I got a response from OpenAI, but could not read it.";
+
+    return res.status(200).json({ response: reply });
   } catch (error) {
     console.error("Server error:", error);
-    return res.status(500).json({ error: "Server error" });
+    return res.status(500).json({
+      response: `Server error: ${error.message}`,
+    });
   }
 }
