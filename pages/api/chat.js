@@ -38,11 +38,12 @@ Rules:
 8. Do not over-explain.
 9. If they seem interested, collect name, email, phone, business name, and what they want the bot to help with.
 10. When collecting info, move naturally to the next missing item only.
-11. Do NOT proactively mention pricing.
-12. If asked about pricing, say pricing depends on the business and what they need. Explain that EnAction.ai has options for different business sizes and offer to learn about their business first before giving specifics.
-13. Do not mention OpenAI, code, APIs, or backend setup unless asked.
-14. If doing a demo simulation as if you are the visitor's business chatbot, do not overwrite or confuse the real EnAction.ai lead capture info.
-15. In a demo simulation, clearly act as the visitor's business chatbot and answer based on the business details they gave. If the detail is not known, do not make it up. Ask a helpful follow-up or say the business can customize that answer.
+11. If the visitor gives information out of order, accept it and continue asking for the missing item.
+12. Do NOT proactively mention pricing.
+13. If asked about pricing, say pricing depends on the business and what they need. Explain that EnAction.ai has options for different business sizes and offer to learn about their business first before giving specifics.
+14. Do not mention OpenAI, code, APIs, or backend setup unless asked.
+15. If doing a demo simulation as if you are the visitor's business chatbot, do not overwrite or confuse the real EnAction.ai lead capture info.
+16. In a demo simulation, clearly act as the visitor's business chatbot and answer based on the business details they gave. If the detail is not known, do not make it up.
 
 Business information:
 ${businessInfo}
@@ -84,59 +85,104 @@ ${businessInfo}
       data.output?.[0]?.content?.[0]?.text?.value ||
       "I got a response from OpenAI, but could not read it.";
 
-    const allText = messages.map((m) => m.content).join(" ") + " " + message;
+    // AI LEAD EXTRACTION
+    const userOnlyTranscript = messages
+      .filter((m) => m.role === "user")
+      .map((m) => `User: ${m.content}`)
+      .join("\n");
 
-    const emailMatch = allText.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i);
+    const extractionPrompt = `
+Extract lead information from this website chat transcript.
 
-    const phoneMatch = allText.match(
-      /(\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/i
-    );
+Return ONLY valid JSON. No markdown. No explanation.
 
-    let nameMatch = allText.match(
-      /(?:my name is|name is|i am|i'm)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)/i
-    );
+Fields:
+{
+  "name": "",
+  "email": "",
+  "phone": "",
+  "company": "",
+  "businessType": "",
+  "needs": "",
+  "isLead": true or false
+}
 
-    if (!nameMatch) {
-      const possibleName = message.trim();
-      if (
-        possibleName.length < 30 &&
-        /^[A-Za-z]+(?:\s[A-Za-z]+)?$/.test(possibleName)
-      ) {
-        nameMatch = [null, possibleName];
-      }
-    }
+Rules:
+- Only use information clearly provided by the visitor.
+- Do not use assistant messages as lead data.
+- Do not guess.
+- Do not treat phrases like "thank you", "sure", "yes", or "no thanks" as a name.
+- If the visitor gives a business name like "JSS Handyman" or "Mikes Roofing", put it in company.
+- If they say "I'm a handyman" or "I run a roofing company", put that in businessType.
+- If they describe what they want help with, put that in needs.
+- isLead should be true only if they showed interest in EnAction.ai or provided contact info.
 
-    let companyMatch = allText.match(
-      /(?:company is|business is|from|at|own|run)\s+([a-zA-Z0-9&.' -]+)/i
-    );
+Transcript:
+${userOnlyTranscript}
+`;
 
-    if (!companyMatch) {
-      const possibleCompany = message.trim();
-      if (
-        possibleCompany.length < 40 &&
-        /[A-Za-z]/.test(possibleCompany) &&
-        possibleCompany.split(" ").length >= 2
-      ) {
-        companyMatch = [null, possibleCompany];
-      }
-    }
-
-    const lead = {
-      name: nameMatch?.[1]?.trim() || "",
-      email: emailMatch?.[0]?.trim() || "",
-      phone: phoneMatch?.[1]?.trim() || "",
-      company: companyMatch?.[1]?.trim() || "",
-      message: allText,
-      source: "EnAction.ai website chatbot",
-      timestamp: new Date().toISOString(),
+    let lead = {
+      name: "",
+      email: "",
+      phone: "",
+      company: "",
+      businessType: "",
+      needs: "",
+      isLead: false,
     };
 
-    if (lead.name && lead.email && lead.phone) {
+    try {
+      const extractRes = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          input: extractionPrompt,
+        }),
+      });
+
+      const extractData = await extractRes.json();
+
+      const rawJson =
+        extractData.output_text ||
+        extractData.output?.[0]?.content?.[0]?.text ||
+        "{}";
+
+      lead = JSON.parse(rawJson);
+    } catch (extractError) {
+      console.error("Lead extraction error:", extractError);
+    }
+
+    const latestMessage = message || "";
+
+    const latestMessageHasContactInfo =
+      /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(latestMessage) ||
+      /(\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/i.test(latestMessage);
+
+    const readyToSendLead =
+      lead.isLead &&
+      latestMessageHasContactInfo &&
+      (lead.email || lead.phone);
+
+    if (readyToSendLead) {
       try {
         await fetch(WEBHOOK_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(lead),
+          body: JSON.stringify({
+            name: lead.name || "",
+            email: lead.email || "",
+            phone: lead.phone || "",
+            company: lead.company || "",
+            businessType: lead.businessType || "",
+            needs: lead.needs || "",
+            source: "EnAction.ai website chatbot",
+            timestamp: new Date().toISOString(),
+            transcript: userOnlyTranscript,
+          }),
         });
       } catch (webhookError) {
         console.error("Webhook error:", webhookError);
