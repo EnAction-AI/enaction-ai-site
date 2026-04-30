@@ -18,13 +18,7 @@ function extractJson(text) {
   }
 }
 
-function buildTranscript(messages) {
-  return messages
-    .map((msg) => `${msg.role === "user" ? "Visitor" : "Ena"}: ${msg.content}`)
-    .join("\n\n");
-}
-
-async function sendLeadToWebhook(lead, messages) {
+async function sendLeadToWebhook(lead) {
   if (!WEBHOOK_URL) return;
 
   await fetch(WEBHOOK_URL, {
@@ -38,9 +32,8 @@ async function sendLeadToWebhook(lead, messages) {
       phone: lead.phone || "",
       company: lead.company || "",
       sms_consent: lead.sms_consent || "no",
-      status: lead.status || "partial",
+      status: "ready",
       lead_key: lead.email || lead.phone || "",
-      transcript: buildTranscript(messages),
       timestamp: new Date().toISOString(),
     }),
   });
@@ -77,7 +70,6 @@ You extract lead information from a website chatbot conversation.
 Return ONLY valid JSON with this exact shape:
 {
   "should_save": true or false,
-  "status": "partial" or "confirmed",
   "name": "",
   "email": "",
   "phone": "",
@@ -86,10 +78,13 @@ Return ONLY valid JSON with this exact shape:
 }
 
 Rules:
-- should_save is true if the visitor has provided either an email address or phone number.
-- should_save is false if there is no email and no phone.
-- status is "partial" unless the visitor has clearly confirmed all details are correct.
-- status is "confirmed" only if name, email, phone, company, and confirmation are present.
+- should_save is true ONLY when the visitor has provided:
+  1. name
+  2. company or business name
+  3. either email OR phone
+- should_save is false if name is missing.
+- should_save is false if company is missing.
+- should_save is false if both email and phone are missing.
 - sms_consent is "yes" only if the visitor clearly agrees to being called or texted.
 - If SMS consent is unclear, sms_consent must be "no".
 - Do not guess missing fields.
@@ -105,8 +100,15 @@ Rules:
 
     const leadData = extractJson(leadCheck.output_text || "");
 
-    if (leadData?.should_save) {
-      await sendLeadToWebhook(leadData, messages);
+    const alreadySaved = messages.some(
+      (msg) =>
+        msg.role === "assistant" &&
+        msg.content &&
+        msg.content.includes("LEAD_ALREADY_SAVED")
+    );
+
+    if (leadData?.should_save && !alreadySaved) {
+      await sendLeadToWebhook(leadData);
     }
 
     const response = await client.responses.create({
@@ -173,25 +175,11 @@ For SMS consent, ask naturally:
 
 Do not assume a phone number means SMS consent.
 
-Once you have name, email, phone, company, and SMS consent, confirm the details like this:
-
-"Perfect, just to confirm:
-
-Name:
-Email:
-Phone:
-Company:
-Okay to call or text:
-
-Is everything correct?"
-
-If they confirm:
+Once you have name, company, and either email or phone:
 - Thank them
 - Say someone from EnAction.ai will follow up shortly
-
-If they do not provide all details:
-- Continue naturally
-- Ask for one missing item at a time
+- Do not keep asking for more info unless it feels natural
+- Include this hidden marker at the very end of your reply exactly once: LEAD_ALREADY_SAVED
 
 Do NOT mention:
 - Google Sheets
@@ -200,6 +188,7 @@ Do NOT mention:
 - Code
 - OpenAI
 - Internal systems
+- The hidden marker
 `,
         },
         ...messages.map((msg) => ({
@@ -209,7 +198,9 @@ Do NOT mention:
       ],
     });
 
-    const reply = response.output_text || "Sorry, I had trouble responding.";
+    let reply = response.output_text || "Sorry, I had trouble responding.";
+
+    reply = reply.replace("LEAD_ALREADY_SAVED", "").trim();
 
     return res.status(200).json({ reply });
   } catch (error) {
