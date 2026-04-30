@@ -4,6 +4,48 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const WEBHOOK_URL =
+  process.env.LEAD_WEBHOOK_URL || "https://eo7zgg7h6b8dayi.m.pipedream.net";
+
+function extractJson(text) {
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+
+  try {
+    return JSON.parse(match[0]);
+  } catch {
+    return null;
+  }
+}
+
+function buildTranscript(messages) {
+  return messages
+    .map((msg) => `${msg.role === "user" ? "Visitor" : "Ena"}: ${msg.content}`)
+    .join("\n\n");
+}
+
+async function sendLeadToWebhook(lead, messages) {
+  if (!WEBHOOK_URL) return;
+
+  await fetch(WEBHOOK_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: lead.name || "",
+      email: lead.email || "",
+      phone: lead.phone || "",
+      company: lead.company || "",
+      sms_consent: lead.sms_consent || "no",
+      status: lead.status || "partial",
+      lead_key: lead.email || lead.phone || "",
+      transcript: buildTranscript(messages),
+      timestamp: new Date().toISOString(),
+    }),
+  });
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ reply: "Method not allowed" });
@@ -12,51 +54,162 @@ export default async function handler(req, res) {
   try {
     const { messages } = req.body;
 
-    // Debug checks
     if (!process.env.OPENAI_API_KEY) {
       return res.status(500).json({
-        reply: "Debug error: OPENAI_API_KEY is missing in environment variables",
+        reply: "Debug error: OPENAI_API_KEY is missing.",
       });
     }
 
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({
-        reply: "Debug error: messages array is missing or invalid",
+        reply: "Debug error: messages array is missing or invalid.",
       });
     }
 
-    // Build input for OpenAI
-    const input = [
-      {
-        role: "system",
-        content:
-          "You are Ena, a friendly AI assistant for EnAction.ai. You help small businesses understand how a website chatbot can capture leads, answer questions, and increase conversions. Keep responses short, helpful, and conversational.",
-      },
-      ...messages.map((msg) => ({
-        role: msg.role,
-        content: msg.content,
-      })),
-    ];
+    const leadCheck = await client.responses.create({
+      model: "gpt-4.1-mini",
+      input: [
+        {
+          role: "system",
+          content: `
+You extract lead information from a website chatbot conversation.
+
+Return ONLY valid JSON with this exact shape:
+{
+  "should_save": true or false,
+  "status": "partial" or "confirmed",
+  "name": "",
+  "email": "",
+  "phone": "",
+  "company": "",
+  "sms_consent": "yes" or "no"
+}
+
+Rules:
+- should_save is true if the visitor has provided either an email address or phone number.
+- should_save is false if there is no email and no phone.
+- status is "partial" unless the visitor has clearly confirmed all details are correct.
+- status is "confirmed" only if name, email, phone, company, and confirmation are present.
+- sms_consent is "yes" only if the visitor clearly agrees to being called or texted.
+- If SMS consent is unclear, sms_consent must be "no".
+- Do not guess missing fields.
+- Use empty strings for unknown fields.
+`,
+        },
+        {
+          role: "user",
+          content: JSON.stringify(messages),
+        },
+      ],
+    });
+
+    const leadData = extractJson(leadCheck.output_text || "");
+
+    if (leadData?.should_save) {
+      await sendLeadToWebhook(leadData, messages);
+    }
 
     const response = await client.responses.create({
       model: "gpt-4.1-mini",
-      input,
+      input: [
+        {
+          role: "system",
+          content: `
+You are Ena, the friendly AI assistant for EnAction.ai.
+
+Your job:
+- Help small businesses understand how EnAction.ai website chatbots work.
+- Keep replies short, helpful, friendly, and complete.
+- Ask one question at a time.
+- Move naturally toward lead capture when someone shows interest.
+
+Core value:
+EnAction.ai installs a smart assistant on a business website that:
+- Answers customer questions instantly
+- Captures leads when the business is busy or unavailable
+- Helps turn website visitors into real opportunities
+
+Position it as:
+"Answer questions and capture leads so you never miss an opportunity."
+
+Pricing:
+$150 setup and $99 per month.
+
+What it includes:
+- Custom chatbot trained on the business
+- Answers FAQs about services, pricing, hours, location, process, and common customer questions
+- Captures name, email, phone, and company
+- Sends clean leads to the business
+- Website embed and setup support
+- Ongoing maintenance
+
+Conversation style:
+- Sound natural, not robotic
+- Be confident but not pushy
+- Keep responses short enough for one screen
+- Finish your thoughts
+- Do not over-explain technology
+- Do not use unverified social proof claims
+
+Discovery approach:
+When someone shares their business:
+1. Acknowledge the business
+2. Mention a common pain point
+3. Ask a simple follow-up question
+
+Example:
+"Got it, a handyman business. Most guys I talk to miss calls when they're on a job or after hours. Is that something you deal with?"
+
+Lead capture goal:
+When someone shows interest, collect:
+1. Name
+2. Email
+3. Phone
+4. Company or business name
+5. SMS consent
+
+For SMS consent, ask naturally:
+"What’s the best number to reach you? Also, is it okay if we call or text you about your request? You can reply STOP to opt out of texts anytime."
+
+Do not assume a phone number means SMS consent.
+
+Once you have name, email, phone, company, and SMS consent, confirm the details like this:
+
+"Perfect, just to confirm:
+
+Name:
+Email:
+Phone:
+Company:
+Okay to call or text:
+
+Is everything correct?"
+
+If they confirm:
+- Thank them
+- Say someone from EnAction.ai will follow up shortly
+
+If they do not provide all details:
+- Continue naturally
+- Ask for one missing item at a time
+
+Do NOT mention:
+- Google Sheets
+- Webhooks
+- APIs
+- Code
+- OpenAI
+- Internal systems
+`,
+        },
+        ...messages.map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        })),
+      ],
     });
 
-    // Safely extract reply
-    let reply = "Sorry, I had trouble responding.";
-
-    if (response.output_text) {
-      reply = response.output_text;
-    } else if (
-      response.output &&
-      response.output[0] &&
-      response.output[0].content &&
-      response.output[0].content[0] &&
-      response.output[0].content[0].text
-    ) {
-      reply = response.output[0].content[0].text;
-    }
+    const reply = response.output_text || "Sorry, I had trouble responding.";
 
     return res.status(200).json({ reply });
   } catch (error) {
