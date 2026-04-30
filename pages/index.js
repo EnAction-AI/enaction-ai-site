@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 
 export default function Home() {
   const [messages, setMessages] = useState([
@@ -8,12 +8,15 @@ export default function Home() {
         "Hi, I’m Ena. I help small businesses turn website visitors into leads, bookings, and follow-ups. What kind of business do you run?",
     },
   ]);
+
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const chatEndRef = useRef(null);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const chatBox = document.getElementById("chat-messages");
+    if (chatBox) {
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
   }, [messages, loading]);
 
   async function sendMessage() {
@@ -41,7 +44,8 @@ export default function Home() {
         ...updatedMessages,
         {
           role: "assistant",
-          content: data.reply || "Sorry, I had trouble responding. Please try again.",
+          content:
+            data.reply || "Sorry, I had trouble responding. Please try again.",
         },
       ]);
     } catch (error) {
@@ -71,10 +75,18 @@ export default function Home() {
         </div>
 
         <div className="hidden items-center gap-8 text-sm font-medium text-slate-600 md:flex">
-          <a href="#features" className="hover:text-[#2563eb]">Features</a>
-          <a href="#how" className="hover:text-[#2563eb]">How It Works</a>
-          <a href="#pricing" className="hover:text-[#2563eb]">Pricing</a>
-          <a href="#faq" className="hover:text-[#2563eb]">FAQ</a>
+          <a href="#features" className="hover:text-[#2563eb]">
+            Features
+          </a>
+          <a href="#how" className="hover:text-[#2563eb]">
+            How It Works
+          </a>
+          <a href="#pricing" className="hover:text-[#2563eb]">
+            Pricing
+          </a>
+          <a href="#faq" className="hover:text-[#2563eb]">
+            FAQ
+          </a>
         </div>
 
         <a
@@ -124,7 +136,7 @@ export default function Home() {
           </div>
         </div>
 
-        <div id="demo" className="relative">
+        <div id="demo" className="relative scroll-mt-10">
           <div className="absolute -left-10 -top-10 h-48 w-48 rounded-full bg-blue-200 blur-3xl"></div>
           <div className="absolute -bottom-10 -right-10 h-48 w-48 rounded-full bg-purple-200 blur-3xl"></div>
 
@@ -134,7 +146,10 @@ export default function Home() {
               <div className="text-xl font-bold">Chat with Ena</div>
             </div>
 
-            <div className="h-[440px] overflow-y-auto bg-slate-50 p-5">
+            <div
+              id="chat-messages"
+              className="h-[440px] overflow-y-auto bg-slate-50 p-5"
+            >
               <div className="space-y-4">
                 {messages.map((msg, index) => (
                   <div
@@ -162,8 +177,6 @@ export default function Home() {
                     </div>
                   </div>
                 )}
-
-                <div ref={chatEndRef} />
               </div>
             </div>
 
@@ -176,6 +189,7 @@ export default function Home() {
                   placeholder="Type your message..."
                   className="flex-1 rounded-full border border-slate-200 px-5 py-3 text-sm outline-none focus:border-[#2563eb]"
                 />
+
                 <button
                   onClick={sendMessage}
                   disabled={loading}
@@ -235,9 +249,21 @@ export default function Home() {
           />
 
           <div className="mt-12 grid gap-6 md:grid-cols-3">
-            <Step number="01" title="Share your business info" text="Send your website, services, FAQs, contact info, and goals." />
-            <Step number="02" title="We build your bot" text="We create your custom chatbot and connect your lead capture system." />
-            <Step number="03" title="Go live" text="Add the chatbot to your website and start capturing more opportunities." />
+            <Step
+              number="01"
+              title="Share your business info"
+              text="Send your website, services, FAQs, contact info, and goals."
+            />
+            <Step
+              number="02"
+              title="We build your bot"
+              text="We create your custom chatbot and connect your lead capture system."
+            />
+            <Step
+              number="03"
+              title="Go live"
+              text="Add the chatbot to your website and start capturing more opportunities."
+            />
           </div>
         </div>
       </section>
@@ -246,37 +272,50 @@ export default function Home() {
         <div className="mx-auto max-w-7xl px-6">
           <SectionHeader
             eyebrow="Pricing"
-            title="Simple pricing for small businesses."
-            text="Affordable setup and monthly support without making things complicated."
+            title="Simple plans for small businesses."
+            text="Start with lead capture, then add automated follow-up as your business grows."
           />
 
-          <div className="mx-auto mt-12 max-w-md rounded-[2rem] border border-blue-100 bg-gradient-to-br from-white to-blue-50 p-8 shadow-xl">
-            <div className="text-sm font-semibold uppercase tracking-wide text-[#2563eb]">
-              Website Chatbot
-            </div>
+          <div className="mt-12 grid gap-6 md:grid-cols-3">
+            <PricingCard
+              name="Starter"
+              price="$99"
+              description="Capture every website lead."
+              features={[
+                "Custom website chatbot",
+                "FAQ and business training",
+                "Lead capture",
+                "Google Sheet lead tracking",
+                "Website embed support",
+              ]}
+            />
 
-            <div className="mt-4 flex items-end gap-2">
-              <div className="text-5xl font-extrabold text-slate-950">$75</div>
-              <div className="pb-2 text-slate-500">/ month</div>
-            </div>
+            <PricingCard
+              name="Growth"
+              price="$129"
+              description="Capture leads and follow up instantly."
+              popular
+              features={[
+                "Everything in Starter",
+                "Automated first follow-up email",
+                "Client copied on lead emails",
+                "Instant lead notifications",
+                "Improved qualification flow",
+              ]}
+            />
 
-            <div className="mt-2 text-slate-600">$100 setup fee</div>
-
-            <ul className="mt-8 space-y-4 text-sm text-slate-700">
-              <li>✓ Custom website chatbot</li>
-              <li>✓ FAQ and business training</li>
-              <li>✓ Lead capture</li>
-              <li>✓ Google Sheet lead tracking</li>
-              <li>✓ Website embed support</li>
-              <li>✓ Ongoing maintenance</li>
-            </ul>
-
-            <a
-              href="mailto:support@enaction.ai"
-              className="mt-8 block rounded-full bg-[#2563eb] px-6 py-4 text-center font-semibold text-white hover:bg-[#1d4ed8]"
-            >
-              Get Started
-            </a>
+            <PricingCard
+              name="Pro"
+              price="$149"
+              description="Turn conversations into opportunities."
+              features={[
+                "Everything in Growth",
+                "Multi-step email follow-up sequence",
+                "Advanced lead qualification",
+                "Booking or call-request flow",
+                "Priority customization",
+              ]}
+            />
           </div>
         </div>
       </section>
@@ -299,8 +338,8 @@ export default function Home() {
               answer="Leads can be sent to a Google Sheet so your team has a simple place to review and follow up."
             />
             <FAQ
-              question="Can this help with missed calls and texts?"
-              answer="Yes. Ena can answer website visitors instantly and collect their contact info so you can follow up when available."
+              question="Can this send follow-up emails?"
+              answer="Yes. On Growth and Pro plans, the system can send an automatic first follow-up email to the lead and copy your team so you can take over the conversation."
             />
             <FAQ
               question="Do I need to know how to code?"
@@ -377,6 +416,52 @@ function Step({ number, title, text }) {
       <div className="text-sm font-bold text-[#2563eb]">{number}</div>
       <h3 className="mt-4 text-xl font-bold text-slate-950">{title}</h3>
       <p className="mt-3 leading-7 text-slate-600">{text}</p>
+    </div>
+  );
+}
+
+function PricingCard({ name, price, description, features, popular }) {
+  return (
+    <div
+      className={`relative rounded-[2rem] border p-8 shadow-sm ${
+        popular
+          ? "border-blue-200 bg-gradient-to-br from-white to-blue-50 shadow-xl"
+          : "border-slate-200 bg-white"
+      }`}
+    >
+      {popular && (
+        <div className="absolute right-6 top-6 rounded-full bg-[#2563eb] px-3 py-1 text-xs font-bold text-white">
+          Most Popular
+        </div>
+      )}
+
+      <div className="text-sm font-semibold uppercase tracking-wide text-[#2563eb]">
+        {name}
+      </div>
+
+      <div className="mt-4 flex items-end gap-2">
+        <div className="text-5xl font-extrabold text-slate-950">{price}</div>
+        <div className="pb-2 text-slate-500">/ month</div>
+      </div>
+
+      <p className="mt-3 leading-7 text-slate-600">{description}</p>
+
+      <ul className="mt-8 space-y-4 text-sm text-slate-700">
+        {features.map((feature, index) => (
+          <li key={index}>✓ {feature}</li>
+        ))}
+      </ul>
+
+      <a
+        href="#demo"
+        className={`mt-8 block rounded-full px-6 py-4 text-center font-semibold ${
+          popular
+            ? "bg-[#2563eb] text-white hover:bg-[#1d4ed8]"
+            : "border border-slate-200 bg-white text-slate-900 hover:border-blue-200"
+        }`}
+      >
+        Get Started
+      </a>
     </div>
   );
 }
