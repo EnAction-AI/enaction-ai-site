@@ -32,9 +32,11 @@ const DEFAULT_BOT_ID = process.env.ENACTION_BOT_ID || "";
 // Explicit switch. Only the literal string "false" turns the integration off.
 const PORTAL_ENABLED = String(process.env.ENACTION_PORTAL_INTEGRATION_ENABLED).toLowerCase() !== "false";
 
-// Fallback only. The agent's real name comes from the portal session lookup,
-// resolved from the bot id, so each business can have its own agent name.
-const DEFAULT_AGENT_NAME = "Ena";
+// Neutral fallback only. This is a shared multi-client engine, so it must never
+// default to one client's agent name. Every business's real agent name comes
+// from the portal session lookup, resolved from its bot id — EnAction.ai's own
+// site resolves "Ena" from the enaction-main client record.
+const DEFAULT_AGENT_NAME = "AI Agent";
 
 const UNAVAILABLE_MESSAGE =
   "We're sorry, but the chat service is temporarily unavailable right now. Please try again later or contact the business directly for assistance.";
@@ -112,7 +114,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { messages, bot_id: bodyBotId, conversation_id: bodyConversationId } = req.body;
+    const {
+      messages,
+      bot_id: bodyBotId,
+      conversation_id: bodyConversationId,
+      // Admin test conversation from the EnAction portal. The status gate and the
+      // agent name lookup still run exactly as normal; nothing is stored and
+      // nothing is forwarded to Pipedream / Google Sheets.
+      preview: bodyPreview,
+    } = req.body;
+    const isPreview = bodyPreview === true;
 
     if (!process.env.OPENAI_API_KEY) {
       console.error("[enaction] configuration error: OPENAI_API_KEY is missing");
@@ -285,6 +296,11 @@ Do NOT mention:
     reply = reply.replace("LEAD_ALREADY_SAVED", "").trim();
 
     // ---- 4. save to the portal, then Pipedream if (and only if) granted ---
+    // A preview skips this step entirely: no conversation row, no lead row, no
+    // Pipedream claim and no Google Sheets row can be created by a test chat.
+    if (isPreview) {
+      return res.status(200).json({ reply });
+    }
     if (PORTAL_ENABLED && conversationId) {
       const ingest = await portalPost("/api/public/agent/ingest", {
         bot_id: botId,
