@@ -32,6 +32,10 @@ const DEFAULT_BOT_ID = process.env.ENACTION_BOT_ID || "";
 // Explicit switch. Only the literal string "false" turns the integration off.
 const PORTAL_ENABLED = String(process.env.ENACTION_PORTAL_INTEGRATION_ENABLED).toLowerCase() !== "false";
 
+// Fallback only. The agent's real name comes from the portal session lookup,
+// resolved from the bot id, so each business can have its own agent name.
+const DEFAULT_AGENT_NAME = "Ena";
+
 const UNAVAILABLE_MESSAGE =
   "We're sorry, but the chat service is temporarily unavailable right now. Please try again later or contact the business directly for assistance.";
 
@@ -122,6 +126,9 @@ export default async function handler(req, res) {
     const conversationId = (bodyConversationId || "").trim();
 
     // ---- 1. service gate, before any OpenAI call -------------------------
+    // The same gate also returns this business's configured agent name, so one
+    // shared engine serves every client without per-client files.
+    let agentName = DEFAULT_AGENT_NAME;
     if (PORTAL_ENABLED) {
       const gate = await portalPost("/api/public/agent/session", { bot_id: botId });
       // A configuration problem, a portal failure, or a blocked business all
@@ -129,6 +136,8 @@ export default async function handler(req, res) {
       if (!gate.ok || !gate.data || gate.data.allowed !== true) {
         return res.status(200).json({ reply: UNAVAILABLE_MESSAGE });
       }
+      const configured = typeof gate.data.agent_name === "string" ? gate.data.agent_name.trim() : "";
+      if (configured) agentName = configured;
     }
 
     // ---- 2. lead extraction (unchanged) ----------------------------------
@@ -138,7 +147,7 @@ export default async function handler(req, res) {
         {
           role: "system",
           content: `
-You extract lead information from a website conversation with Ena, the EnAction AI website agent.
+You extract lead information from a conversation between a website visitor and an AI website agent.
 
 Return ONLY valid JSON with this exact shape:
 {
@@ -177,22 +186,26 @@ Rules:
         {
           role: "system",
           content: `
-You are Ena, the friendly AI website agent for EnAction.ai.
+You are ${agentName}, the friendly AI website agent powered by EnAction.ai.
 
 Your job:
-- Help small businesses understand how the EnAction platform and Ena work together.
+- Help small businesses understand how the EnAction platform and ${agentName} work together.
 - Keep replies short, helpful, friendly, and complete.
 - Ask one question at a time.
 - Move naturally toward lead capture when someone shows interest.
 
+Your name:
+- Always introduce yourself as ${agentName}.
+- Never call yourself by any other name.
+
 Product distinction:
 - EnAction.ai is the website lead engagement and management platform.
-- Ena is the AI website agent that visitors interact with.
+- ${agentName} is the AI website agent that visitors interact with.
 - Never define the entire EnAction product as a chatbot or chatbot service.
 
 Core value — Engage. Capture. Manage.:
-- ENGAGE: Ena answers questions about the business 24/7, learns what the visitor needs, and guides them toward the appropriate next step.
-- CAPTURE: Ena naturally collects lead information and preserves the conversation context so potential opportunities are not lost.
+- ENGAGE: ${agentName} answers questions about the business 24/7, learns what the visitor needs, and guides them toward the appropriate next step.
+- CAPTURE: ${agentName} naturally collects lead information and preserves the conversation context so potential opportunities are not lost.
 - MANAGE: Leads and conversations appear in the EnAction dashboard, where the business can review conversations, update lead statuses, add notes, and organize opportunities for follow-up.
 
 Website setup and installation:
@@ -212,7 +225,7 @@ Pricing:
 $99.99 per month with no setup fee.
 
 What it includes:
-- Ena, a custom AI website agent trained on the business
+- A custom AI website agent trained on the business
 - Answers FAQs about services, pricing, hours, location, process, and common customer questions
 - Captures name, email, phone, and company
 - Preserves lead details and conversation context in the EnAction dashboard
@@ -291,7 +304,7 @@ Do NOT mention:
 
     return res.status(200).json({ reply });
   } catch (error) {
-    console.error("Ena chatbot error:", error.message);
+    console.error("EnAction agent error:", error.message);
     return res.status(200).json({ reply: "Sorry, I had trouble responding. Please try again." });
   }
 }
