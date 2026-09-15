@@ -41,6 +41,14 @@ const DEFAULT_AGENT_NAME = "AI Agent";
 const UNAVAILABLE_MESSAGE =
   "We're sorry, but the chat service is temporarily unavailable right now. Please try again later or contact the business directly for assistance.";
 
+// Plain-text incremental body. No buffering anywhere in front of it.
+const STREAM_HEADERS = {
+  "Content-Type": "text/plain; charset=utf-8",
+  "Cache-Control": "no-cache, no-transform",
+  Connection: "keep-alive",
+  "X-Accel-Buffering": "no",
+};
+
 function extractJson(text) {
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) return null;
@@ -108,56 +116,22 @@ async function sendLeadToWebhook(lead, leadId) {
   return delivered;
 }
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ reply: "Method not allowed" });
-  }
+// A lead needs name + company + (email OR phone). When the conversation so far
+// contains neither an email address nor anything phone-shaped, the extraction
+// call cannot possibly return should_save: true, so it is skipped. The moment
+// either appears it runs exactly as before.
+const EMAIL_RE = /[^\s@]+@[^\s@]+\.[^\s@]+/;
+const PHONE_RE = /(?:\+?\d[\s().-]?){7,}/;
 
-  try {
-    const {
-      messages,
-      bot_id: bodyBotId,
-      conversation_id: bodyConversationId,
-      // Admin test conversation from the EnAction portal. The status gate and the
-      // agent name lookup still run exactly as normal; nothing is stored and
-      // nothing is forwarded to Pipedream / Google Sheets.
-      preview: bodyPreview,
-    } = req.body;
-    const isPreview = bodyPreview === true;
+function couldQualify(messages) {
+  const text = messages
+    .filter((m) => m && m.role === "user" && typeof m.content === "string")
+    .map((m) => m.content)
+    .join("\n");
+  return EMAIL_RE.test(text) || PHONE_RE.test(text);
+}
 
-    if (!process.env.OPENAI_API_KEY) {
-      console.error("[enaction] configuration error: OPENAI_API_KEY is missing");
-      return res.status(200).json({ reply: UNAVAILABLE_MESSAGE });
-    }
-    if (!messages || !Array.isArray(messages)) {
-      return res.status(400).json({ reply: "Sorry, I had trouble responding." });
-    }
-
-    const botId = (bodyBotId || DEFAULT_BOT_ID || "").trim();
-    const conversationId = (bodyConversationId || "").trim();
-
-    // ---- 1. service gate, before any OpenAI call -------------------------
-    // The same gate also returns this business's configured agent name, so one
-    // shared engine serves every client without per-client files.
-    let agentName = DEFAULT_AGENT_NAME;
-    if (PORTAL_ENABLED) {
-      const gate = await portalPost("/api/public/agent/session", { bot_id: botId });
-      // A configuration problem, a portal failure, or a blocked business all
-      // stop here. We never quietly skip the status check.
-      if (!gate.ok || !gate.data || gate.data.allowed !== true) {
-        return res.status(200).json({ reply: UNAVAILABLE_MESSAGE });
-      }
-      const configured = typeof gate.data.agent_name === "string" ? gate.data.agent_name.trim() : "";
-      if (configured) agentName = configured;
-    }
-
-    // ---- 2. lead extraction (unchanged) ----------------------------------
-    const leadCheck = await client.responses.create({
-      model: MODEL,
-      input: [
-        {
-          role: "system",
-          content: `
+const LEAD_EXTRACTION_INSTRUCTIONS = `
 You extract lead information from a conversation between a website visitor and an AI website agent.
 
 Return ONLY valid JSON with this exact shape:
@@ -182,21 +156,10 @@ Rules:
 - If SMS consent is unclear, sms_consent must be "no".
 - Do not guess missing fields.
 - Use empty strings for unknown fields.
-`,
-        },
-        { role: "user", content: JSON.stringify(messages) },
-      ],
-    });
+`;
 
-    const leadData = extractJson(leadCheck.output_text || "");
-
-    // ---- 3. reply (unchanged instructions) -------------------------------
-    const response = await client.responses.create({
-      model: MODEL,
-      input: [
-        {
-          role: "system",
-          content: `
+function replyInstructions(agentName) {
+  return `
 You are ${agentName}, the friendly AI website agent powered by EnAction.ai.
 
 Your job:
@@ -286,41 +249,178 @@ Do NOT mention:
 - Code
 - OpenAI
 - Internal systems
-`,
-        },
-        ...messages.map((msg) => ({ role: msg.role, content: msg.content })),
-      ],
-    });
+`;
+}
 
-    let reply = response.output_text || "Sorry, I had trouble responding.";
-    reply = reply.replace("LEAD_ALREADY_SAVED", "").trim();
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ reply: "Method not allowed" });
+  }
+
+  const t0 = Date.now();
+  const ms = () => Date.now() - t0;
+  // Durations only. No message text, no keys, no personal details.
+  const timing = {};
+  let streaming = false;
+
+  try {
+    const {
+      messages,
+      bot_id: bodyBotId,
+      conversation_id: bodyConversationId,
+      // Admin test conversation from the EnAction portal. The status gate and the
+      // agent name lookup still run exactly as normal; nothing is stored and
+      // nothing is forwarded to Pipedream / Google Sheets.
+      preview: bodyPreview,
+      // Opt-in streaming. Without it the response contract is unchanged.
+      stream: bodyStream,
+    } = req.body;
+    const isPreview = bodyPreview === true;
+    const wantsStream = bodyStream === true;
+
+    if (!process.env.OPENAI_API_KEY) {
+      console.error("[enaction] configuration error: OPENAI_API_KEY is missing");
+      return res.status(200).json({ reply: UNAVAILABLE_MESSAGE });
+    }
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).json({ reply: "Sorry, I had trouble responding." });
+    }
+
+    const botId = (bodyBotId || DEFAULT_BOT_ID || "").trim();
+    const conversationId = (bodyConversationId || "").trim();
+
+    // ---- 1. service gate, before any OpenAI call -------------------------
+    // The same gate also returns this business's configured agent name, so one
+    // shared engine serves every client without per-client files.
+    let agentName = DEFAULT_AGENT_NAME;
+    if (PORTAL_ENABLED) {
+      const gateStart = Date.now();
+      const gate = await portalPost("/api/public/agent/session", { bot_id: botId });
+      timing.gate_ms = Date.now() - gateStart;
+      // A configuration problem, a portal failure, or a blocked business all
+      // stop here. We never quietly skip the status check.
+      if (!gate.ok || !gate.data || gate.data.allowed !== true) {
+        console.log(JSON.stringify({ evt: "chat", blocked: true, ...timing, total_ms: ms() }));
+        if (wantsStream) {
+          res.writeHead(200, STREAM_HEADERS);
+          res.write(UNAVAILABLE_MESSAGE);
+          return res.end();
+        }
+        return res.status(200).json({ reply: UNAVAILABLE_MESSAGE });
+      }
+      const configured = typeof gate.data.agent_name === "string" ? gate.data.agent_name.trim() : "";
+      if (configured) agentName = configured;
+    }
+
+    // ---- 2. lead extraction — off the visitor's waiting path --------------
+    // Started here but NOT awaited: it runs alongside the reply instead of in
+    // front of it. Same model, same instructions, same qualification rules.
+    const extractionStart = Date.now();
+    const skipExtraction = !couldQualify(messages);
+    timing.lead_extract_skipped = skipExtraction;
+    const leadPromise = skipExtraction
+      ? Promise.resolve(null)
+      : client.responses
+          .create({
+            model: MODEL,
+            input: [
+              { role: "system", content: LEAD_EXTRACTION_INSTRUCTIONS },
+              { role: "user", content: JSON.stringify(messages) },
+            ],
+          })
+          .then((out) => {
+            timing.lead_extract_ms = Date.now() - extractionStart;
+            return extractJson(out.output_text || "");
+          })
+          .catch((error) => {
+            console.error("[enaction] lead extraction failed:", error.message);
+            timing.lead_extract_ms = Date.now() - extractionStart;
+            return null;
+          });
+
+    // ---- 3. reply ---------------------------------------------------------
+    const replyInput = [
+      { role: "system", content: replyInstructions(agentName) },
+      ...messages.map((msg) => ({ role: msg.role, content: msg.content })),
+    ];
+
+    const replyStart = Date.now();
+    let reply = "";
+
+    if (wantsStream) {
+      streaming = true;
+      res.writeHead(200, STREAM_HEADERS);
+      const events = await client.responses.create({
+        model: MODEL,
+        input: replyInput,
+        stream: true,
+      });
+      for await (const event of events) {
+        if (event.type === "response.output_text.delta" && event.delta) {
+          if (reply === "") timing.first_text_ms = Date.now() - replyStart;
+          reply += event.delta;
+          res.write(event.delta);
+        }
+      }
+      reply = reply.replace("LEAD_ALREADY_SAVED", "").trim();
+      if (!reply) {
+        reply = "Sorry, I had trouble responding.";
+        res.write(reply);
+      }
+      // The visitor now has the complete answer. Everything below still runs
+      // inside this request — awaited, never fire-and-forget — so no lead and
+      // no conversation can be lost, and Sheets stays deduplicated.
+      res.end();
+    } else {
+      const response = await client.responses.create({ model: MODEL, input: replyInput });
+      reply = (response.output_text || "Sorry, I had trouble responding.")
+        .replace("LEAD_ALREADY_SAVED", "")
+        .trim();
+    }
+    timing.reply_ms = Date.now() - replyStart;
 
     // ---- 4. save to the portal, then Pipedream if (and only if) granted ---
     // A preview skips this step entirely: no conversation row, no lead row, no
     // Pipedream claim and no Google Sheets row can be created by a test chat.
     if (isPreview) {
-      return res.status(200).json({ reply });
+      console.log(JSON.stringify({ evt: "chat", preview: true, ...timing, total_ms: ms() }));
+      return streaming ? undefined : res.status(200).json({ reply });
     }
+
+    const leadData = await leadPromise;
+
     if (PORTAL_ENABLED && conversationId) {
+      const ingestStart = Date.now();
       const ingest = await portalPost("/api/public/agent/ingest", {
         bot_id: botId,
         conversation_id: conversationId,
         messages: [...messages, { role: "assistant", content: reply }],
         lead: leadData && leadData.should_save ? leadData : null,
       });
+      timing.ingest_ms = Date.now() - ingestStart;
 
       const grant = ingest.ok && ingest.data ? ingest.data.pipedream : null;
       if (grant && grant.send) {
+        const hookStart = Date.now();
         await sendLeadToWebhook(leadData, grant.lead_id);
+        timing.webhook_ms = Date.now() - hookStart;
       }
     } else if (leadData && leadData.should_save && !PORTAL_ENABLED) {
       // Rollback mode only: legacy behaviour, portal not involved.
       await sendLeadToWebhook(leadData, null);
     }
 
-    return res.status(200).json({ reply });
+    console.log(JSON.stringify({ evt: "chat", streamed: streaming, ...timing, total_ms: ms() }));
+    return streaming ? undefined : res.status(200).json({ reply });
   } catch (error) {
     console.error("EnAction agent error:", error.message);
+    if (streaming) {
+      try {
+        if (!res.writableEnded) res.end();
+      } catch {}
+      return undefined;
+    }
+    if (res.headersSent) return undefined;
     return res.status(200).json({ reply: "Sorry, I had trouble responding. Please try again." });
   }
 }
