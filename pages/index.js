@@ -12,6 +12,22 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // One conversation id per browser tab visit. It survives re-renders and
+  // page navigation within the same visit, and a fresh visit starts fresh.
+  const [conversationId] = useState(() => {
+    if (typeof window === "undefined") return "";
+    const KEY = "enaction_conversation_id";
+    let id = window.sessionStorage.getItem(KEY);
+    if (!id) {
+      id =
+        window.crypto && window.crypto.randomUUID
+          ? window.crypto.randomUUID()
+          : `c_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+      window.sessionStorage.setItem(KEY, id);
+    }
+    return id;
+  });
+
   useEffect(() => {
     const chatBox = document.getElementById("chat-messages");
     if (chatBox) {
@@ -35,7 +51,11 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ messages: updatedMessages }),
+        body: JSON.stringify({
+          messages: updatedMessages,
+          conversation_id: conversationId,
+          bot_id: process.env.NEXT_PUBLIC_ENACTION_BOT_ID || "",
+        }),
       });
 
       const data = await res.json();
@@ -205,171 +225,127 @@ export default function Home() {
 
       <section id="features" className="bg-white py-20">
         <div className="mx-auto max-w-7xl px-6">
-          <SectionHeader
-            eyebrow="Features"
-            title="Everything your website needs to start conversations."
-            text="Ena helps visitors get answers, while helping your business collect better leads and follow up faster."
-          />
+          <div className="mb-12 text-center">
+            <h2 className="text-3xl font-bold tracking-tight text-slate-950 md:text-4xl">
+              What EnAction does for your business
+            </h2>
+            <p className="mt-4 text-lg text-slate-600">
+              A simple assistant that works while you do.
+            </p>
+          </div>
 
-          <div className="mt-12 grid gap-6 md:grid-cols-3">
+          <div className="grid gap-8 md:grid-cols-3">
             <Feature
-              title="Answers FAQs"
-              text="Trained on your services, hours, pricing details, process, and common customer questions."
+              title="Answers common questions"
+              description="Hours, location, services, pricing, availability — your visitors get instant responses, even after hours."
             />
             <Feature
-              title="Captures Leads"
-              text="Collects name, email, phone, business name, and other details when visitors show interest."
+              title="Captures leads"
+              description="Collects name, phone, email, and what they need so you can follow up with real opportunities."
             />
             <Feature
-              title="Books More Calls"
-              text="Guides visitors toward scheduling, requesting a quote, or starting the next step."
-            />
-            <Feature
-              title="Works 24/7"
-              text="Your website can respond instantly, even when your team is busy, closed, or on a job."
-            />
-            <Feature
-              title="Custom to Your Business"
-              text="Every bot is built around your company, your voice, your offers, and your customer journey."
-            />
-            <Feature
-              title="Lead Tracking"
-              text="Leads can be sent to a Google Sheet so you have a simple place to manage follow-up."
+              title="Books and schedules"
+              description="Helps visitors take the next step, whether that’s requesting a quote, booking a call, or leaving a message."
             />
           </div>
         </div>
       </section>
 
-      <section id="how" className="py-20">
+      <section id="how" className="bg-slate-50 py-20">
         <div className="mx-auto max-w-7xl px-6">
-          <SectionHeader
-            eyebrow="How it works"
-            title="Simple setup. No complicated tech."
-            text="We handle the chatbot build so you can focus on running your business."
-          />
+          <div className="mb-12 text-center">
+            <h2 className="text-3xl font-bold tracking-tight text-slate-950 md:text-4xl">
+              How it works
+            </h2>
+          </div>
 
-          <div className="mt-12 grid gap-6 md:grid-cols-3">
+          <div className="grid gap-8 md:grid-cols-3">
             <Step
-              number="01"
-              title="Share your business info"
-              text="Send your website, services, FAQs, contact info, and goals."
+              number="1"
+              title="We learn your business"
+              description="You share your services, FAQs, tone, and what a good lead looks like."
             />
             <Step
-              number="02"
-              title="We build your bot"
-              text="We create your custom chatbot and connect your lead capture system."
+              number="2"
+              title="We install the chatbot"
+              description="A small script is added to your site. No redesign needed."
             />
             <Step
-              number="03"
-              title="Go live"
-              text="Add the chatbot to your website and start capturing more opportunities."
+              number="3"
+              title="You follow up"
+              description="Qualified leads arrive with contact info and context, ready for you to close."
             />
           </div>
         </div>
       </section>
 
       <section id="pricing" className="bg-white py-20">
-        <div className="mx-auto max-w-7xl px-6">
-          <SectionHeader
-            eyebrow="Pricing"
-            title="Simple plans for small businesses."
-            text="Start with lead capture, then add automated follow-up as your business grows."
-          />
-
-          <div className="mt-12 grid gap-6 md:grid-cols-3">
-            <PricingCard
-              name="Starter"
-              price="$99"
-              description="Capture every website lead."
-              features={[
-                "Custom website chatbot",
-                "FAQ and business training",
-                "Lead capture",
-                "Google Sheet lead tracking",
-                "Website embed support",
-              ]}
-            />
-
-            <PricingCard
-              name="Growth"
-              price="$129"
-              description="Capture leads and follow up instantly."
-              popular
-              features={[
-                "Everything in Starter",
-                "Automated first follow-up email",
-                "Client copied on lead emails",
-                "Instant lead notifications",
-                "Improved qualification flow",
-              ]}
-            />
-
-            <PricingCard
-              name="Pro"
-              price="$149"
-              description="Turn conversations into opportunities."
-              features={[
-                "Everything in Growth",
-                "Multi-step email follow-up sequence",
-                "Advanced lead qualification",
-                "Booking or call-request flow",
-                "Priority customization",
-              ]}
-            />
-          </div>
-        </div>
-      </section>
-
-      <section id="faq" className="py-20">
-        <div className="mx-auto max-w-4xl px-6">
-          <SectionHeader
-            eyebrow="FAQ"
-            title="Questions business owners usually ask."
-            text="Here are a few quick answers before we talk."
-          />
-
-          <div className="mt-10 space-y-4">
-            <FAQ
-              question="Will the chatbot know my business?"
-              answer="Yes. Your bot is built around your services, FAQs, hours, location, contact info, and customer process."
-            />
-            <FAQ
-              question="Where do leads go?"
-              answer="Leads can be sent to a Google Sheet so your team has a simple place to review and follow up."
-            />
-            <FAQ
-              question="Can this send follow-up emails?"
-              answer="Yes. On Growth and Pro plans, the system can send an automatic first follow-up email to the lead and copy your team so you can take over the conversation."
-            />
-            <FAQ
-              question="Do I need to know how to code?"
-              answer="No. We help with setup and provide the embed code for your website."
-            />
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-[#0f172a] py-20 text-white">
-        <div className="mx-auto max-w-5xl px-6 text-center">
-          <h2 className="text-4xl font-extrabold tracking-tight">
-            Ready to turn your website into a lead capture tool?
+        <div className="mx-auto max-w-4xl px-6 text-center">
+          <h2 className="text-3xl font-bold tracking-tight text-slate-950 md:text-4xl">
+            Simple pricing
           </h2>
-          <p className="mx-auto mt-5 max-w-2xl text-lg text-slate-300">
-            Try the demo, tell Ena what kind of business you run, and see how a
-            custom chatbot could work on your website.
+          <p className="mt-4 text-lg text-slate-600">
+            One plan. Everything included. No setup fee.
           </p>
 
-          <a
-            href="#demo"
-            className="mt-8 inline-block rounded-full bg-white px-8 py-4 font-semibold text-slate-950 hover:bg-slate-100"
-          >
-            Try the Demo
-          </a>
+          <div className="mt-10 rounded-3xl border border-slate-200 bg-white p-8 shadow-xl md:p-12">
+            <div className="text-sm font-semibold uppercase tracking-wider text-slate-500">
+              EnAction AI Agent
+            </div>
+            <div className="mt-4 flex items-baseline justify-center">
+              <span className="text-6xl font-extrabold text-slate-950">
+                $99.99
+              </span>
+              <span className="ml-2 text-lg text-slate-600">/month</span>
+            </div>
+            <ul className="mt-8 space-y-3 text-left text-slate-600 md:mx-auto md:max-w-md">
+              <ListItem>Custom AI chatbot trained on your business</ListItem>
+              <ListItem>Lead capture and instant notifications</ListItem>
+              <ListItem>Website embed and setup support</ListItem>
+              <ListItem>Unlimited conversations</ListItem>
+              <ListItem>Ongoing maintenance and updates</ListItem>
+            </ul>
+            <a
+              href="#demo"
+              className="mt-8 inline-block rounded-full bg-[#2563eb] px-8 py-4 font-semibold text-white shadow-lg shadow-blue-200 hover:bg-[#1d4ed8]"
+            >
+              Try the Demo
+            </a>
+          </div>
         </div>
       </section>
 
-      <footer className="bg-[#0f172a] px-6 pb-8 text-center text-sm text-slate-400">
-        © {new Date().getFullYear()} EnAction.ai. All rights reserved.
+      <section id="faq" className="bg-slate-50 py-20">
+        <div className="mx-auto max-w-3xl px-6">
+          <h2 className="mb-10 text-center text-3xl font-bold tracking-tight text-slate-950 md:text-4xl">
+            Frequently asked questions
+          </h2>
+
+          <div className="space-y-6">
+            <FAQ
+              q="Will this replace my website?"
+              a="No. The chatbot sits on top of your existing site as a small widget."
+            />
+            <FAQ
+              q="Do I need technical skills?"
+              a="No. We handle installation and training for you."
+            />
+            <FAQ
+              q="What happens to the leads?"
+              a="They’re captured with contact details and sent to you so you can follow up."
+            />
+            <FAQ
+              q="Can I change what the chatbot says?"
+              a="Yes. We work with you to set the right tone, answers, and lead capture flow."
+            />
+          </div>
+        </div>
+      </section>
+
+      <footer className="bg-white py-12">
+        <div className="mx-auto max-w-7xl px-6 text-center text-sm text-slate-500">
+          © {new Date().getFullYear()} EnAction.ai. All rights reserved.
+        </div>
       </footer>
     </main>
   );
@@ -378,99 +354,59 @@ export default function Home() {
 function Stat({ number, label }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 text-center shadow-sm">
-      <div className="text-xl font-bold text-slate-950">{number}</div>
-      <div className="mt-1 text-xs font-medium text-slate-500">{label}</div>
+      <div className="text-2xl font-bold text-[#2563eb]">{number}</div>
+      <div className="text-sm font-medium text-slate-600">{label}</div>
     </div>
   );
 }
 
-function SectionHeader({ eyebrow, title, text }) {
+function Feature({ title, description }) {
   return (
-    <div className="mx-auto max-w-3xl text-center">
-      <div className="text-sm font-bold uppercase tracking-wider text-[#2563eb]">
-        {eyebrow}
-      </div>
-      <h2 className="mt-3 text-4xl font-extrabold tracking-tight text-slate-950">
-        {title}
-      </h2>
-      <p className="mt-4 text-lg leading-8 text-slate-600">{text}</p>
+    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-6">
+      <h3 className="text-lg font-semibold text-slate-950">{title}</h3>
+      <p className="mt-2 text-slate-600">{description}</p>
     </div>
   );
 }
 
-function Feature({ title, text }) {
+function Step({ number, title, description }) {
   return (
-    <div className="rounded-[1.5rem] border border-slate-200 bg-white p-7 shadow-sm transition hover:-translate-y-1 hover:shadow-xl">
-      <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-xl">
-        ✦
+    <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#2563eb] text-sm font-bold text-white">
+        {number}
       </div>
-      <h3 className="text-xl font-bold text-slate-950">{title}</h3>
-      <p className="mt-3 leading-7 text-slate-600">{text}</p>
+      <h3 className="mt-4 text-lg font-semibold text-slate-950">{title}</h3>
+      <p className="mt-2 text-slate-600">{description}</p>
     </div>
   );
 }
 
-function Step({ number, title, text }) {
+function ListItem({ children }) {
   return (
-    <div className="rounded-[1.5rem] border border-slate-200 bg-white p-7 shadow-sm">
-      <div className="text-sm font-bold text-[#2563eb]">{number}</div>
-      <h3 className="mt-4 text-xl font-bold text-slate-950">{title}</h3>
-      <p className="mt-3 leading-7 text-slate-600">{text}</p>
-    </div>
-  );
-}
-
-function PricingCard({ name, price, description, features, popular }) {
-  return (
-    <div
-      className={`relative rounded-[2rem] border p-8 shadow-sm ${
-        popular
-          ? "border-blue-200 bg-gradient-to-br from-white to-blue-50 shadow-xl"
-          : "border-slate-200 bg-white"
-      }`}
-    >
-      {popular && (
-        <div className="absolute right-6 top-6 rounded-full bg-[#2563eb] px-3 py-1 text-xs font-bold text-white">
-          Most Popular
-        </div>
-      )}
-
-      <div className="text-sm font-semibold uppercase tracking-wide text-[#2563eb]">
-        {name}
-      </div>
-
-      <div className="mt-4 flex items-end gap-2">
-        <div className="text-5xl font-extrabold text-slate-950">{price}</div>
-        <div className="pb-2 text-slate-500">/ month</div>
-      </div>
-
-      <p className="mt-3 leading-7 text-slate-600">{description}</p>
-
-      <ul className="mt-8 space-y-4 text-sm text-slate-700">
-        {features.map((feature, index) => (
-          <li key={index}>✓ {feature}</li>
-        ))}
-      </ul>
-
-      <a
-        href="#demo"
-        className={`mt-8 block rounded-full px-6 py-4 text-center font-semibold ${
-          popular
-            ? "bg-[#2563eb] text-white hover:bg-[#1d4ed8]"
-            : "border border-slate-200 bg-white text-slate-900 hover:border-blue-200"
-        }`}
+    <li className="flex items-start gap-3">
+      <svg
+        className="mt-1 h-5 w-5 shrink-0 text-[#2563eb]"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        viewBox="0 0 24 24"
       >
-        Get Started
-      </a>
-    </div>
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M5 13l4 4L19 7"
+        ></path>
+      </svg>
+      <span>{children}</span>
+    </li>
   );
 }
 
-function FAQ({ question, answer }) {
+function FAQ({ q, a }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h3 className="font-bold text-slate-950">{question}</h3>
-      <p className="mt-2 leading-7 text-slate-600">{answer}</p>
+    <div className="rounded-2xl border border-slate-200 bg-white p-6">
+      <h3 className="text-lg font-semibold text-slate-950">{q}</h3>
+      <p className="mt-2 text-slate-600">{a}</p>
     </div>
   );
 }
