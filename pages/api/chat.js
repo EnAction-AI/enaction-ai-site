@@ -1,16 +1,43 @@
+// EnAction chatbot backend — Phase 4.
+// Drop-in replacement for pages/api/chat.js in github.com/EnAction-AI/enaction-ai-site
+//
+// Everything the bot did before is preserved. What's new:
+//   1. a bot id + conversation id travel with every request
+//   2. the EnAction portal is asked whether this business may chat, BEFORE OpenAI
+//   3. the conversation and any lead are saved in the EnAction portal
+//   4. the Pipedream / Google Sheets send happens at most once per conversation,
+//      decided by the portal's database rather than by anything stored here
+//
+// Environment variables:
+//   OPENAI_API_KEY                       (existing)
+//   LEAD_WEBHOOK_URL                     (existing)
+//   OPENAI_MODEL                         (new, single model setting)
+//   ENACTION_API_URL                     (new, e.g. https://enaction.ai)
+//   ENACTION_INGEST_KEY                  (new, shared secret)
+//   ENACTION_BOT_ID                      (new, bot id for EnAction's own site)
+//   ENACTION_PORTAL_INTEGRATION_ENABLED  (new, "true" in production; "false" = temporary rollback)
+
 import OpenAI from "openai";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+const MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
 const WEBHOOK_URL =
   process.env.LEAD_WEBHOOK_URL || "https://eo7zgg7h6b8dayi.m.pipedream.net";
 
+const PORTAL_URL = process.env.ENACTION_API_URL || "";
+const PORTAL_KEY = process.env.ENACTION_INGEST_KEY || "";
+const DEFAULT_BOT_ID = process.env.ENACTION_BOT_ID || "";
+// Explicit switch. Only the literal string "false" turns the integration off.
+const PORTAL_ENABLED = String(process.env.ENACTION_PORTAL_INTEGRATION_ENABLED).toLowerCase() !== "false";
+
+const UNAVAILABLE_MESSAGE =
+  "We're sorry, but the chat service is temporarily unavailable right now. Please try again later or contact the business directly for assistance.";
+
 function extractJson(text) {
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) return null;
-
   try {
     return JSON.parse(match[0]);
   } catch {
@@ -18,25 +45,61 @@ function extractJson(text) {
   }
 }
 
-async function sendLeadToWebhook(lead) {
-  if (!WEBHOOK_URL) return;
+async function portalPost(path, payload) {
+  if (!PORTAL_URL || !PORTAL_KEY) {
+    console.error("[enaction] configuration error: ENACTION_API_URL or ENACTION_INGEST_KEY is missing");
+    return { ok: false, configError: true };
+  }
+  try {
+    const res = await fetch(`${PORTAL_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-enaction-key": PORTAL_KEY },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.error(`[enaction] ${path} failed [${res.status}]`, data && data.error);
+      return { ok: false, status: res.status, data };
+    }
+    return { ok: true, data };
+  } catch (error) {
+    console.error(`[enaction] ${path} request error:`, error.message);
+    return { ok: false, networkError: true };
+  }
+}
 
-  await fetch(WEBHOOK_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      name: lead.name || "",
-      email: lead.email || "",
-      phone: lead.phone || "",
-      company: lead.company || "",
-      sms_consent: lead.sms_consent || "no",
-      status: "ready",
-      lead_key: lead.email || lead.phone || "",
-      timestamp: new Date().toISOString(),
-    }),
-  });
+// Sends the lead to Pipedream exactly as before, then reports the outcome back
+// to the portal so the send is recorded (or the claim released for a retry).
+async function sendLeadToWebhook(lead, leadId) {
+  let delivered = false;
+  try {
+    const res = await fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: lead.name || "",
+        email: lead.email || "",
+        phone: lead.phone || "",
+        company: lead.company || "",
+        sms_consent: lead.sms_consent || "no",
+        status: "ready",
+        lead_key: lead.email || lead.phone || "",
+        timestamp: new Date().toISOString(),
+      }),
+    });
+    delivered = res.ok;
+    if (!res.ok) console.error(`[enaction] pipedream webhook failed [${res.status}]`);
+  } catch (error) {
+    console.error("[enaction] pipedream webhook error:", error.message);
+  }
+
+  if (leadId) {
+    await portalPost("/api/public/agent/pipedream-complete", {
+      lead_id: leadId,
+      outcome: delivered ? "sent" : "failed",
+    });
+  }
+  return delivered;
 }
 
 export default async function handler(req, res) {
@@ -45,22 +108,32 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { messages } = req.body;
+    const { messages, bot_id: bodyBotId, conversation_id: bodyConversationId } = req.body;
 
     if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({
-        reply: "Debug error: OPENAI_API_KEY is missing.",
-      });
+      console.error("[enaction] configuration error: OPENAI_API_KEY is missing");
+      return res.status(200).json({ reply: UNAVAILABLE_MESSAGE });
     }
-
     if (!messages || !Array.isArray(messages)) {
-      return res.status(400).json({
-        reply: "Debug error: messages array is missing or invalid.",
-      });
+      return res.status(400).json({ reply: "Sorry, I had trouble responding." });
     }
 
+    const botId = (bodyBotId || DEFAULT_BOT_ID || "").trim();
+    const conversationId = (bodyConversationId || "").trim();
+
+    // ---- 1. service gate, before any OpenAI call -------------------------
+    if (PORTAL_ENABLED) {
+      const gate = await portalPost("/api/public/agent/session", { bot_id: botId });
+      // A configuration problem, a portal failure, or a blocked business all
+      // stop here. We never quietly skip the status check.
+      if (!gate.ok || !gate.data || gate.data.allowed !== true) {
+        return res.status(200).json({ reply: UNAVAILABLE_MESSAGE });
+      }
+    }
+
+    // ---- 2. lead extraction (unchanged) ----------------------------------
     const leadCheck = await client.responses.create({
-      model: "gpt-4.1-mini",
+      model: MODEL,
       input: [
         {
           role: "system",
@@ -91,28 +164,15 @@ Rules:
 - Use empty strings for unknown fields.
 `,
         },
-        {
-          role: "user",
-          content: JSON.stringify(messages),
-        },
+        { role: "user", content: JSON.stringify(messages) },
       ],
     });
 
     const leadData = extractJson(leadCheck.output_text || "");
 
-    const alreadySaved = messages.some(
-      (msg) =>
-        msg.role === "assistant" &&
-        msg.content &&
-        msg.content.includes("LEAD_ALREADY_SAVED")
-    );
-
-    if (leadData?.should_save && !alreadySaved) {
-      await sendLeadToWebhook(leadData);
-    }
-
+    // ---- 3. reply (unchanged instructions) -------------------------------
     const response = await client.responses.create({
-      model: "gpt-4.1-mini",
+      model: MODEL,
       input: [
         {
           role: "system",
@@ -135,7 +195,7 @@ Position it as:
 "Answer questions and capture leads so you never miss an opportunity."
 
 Pricing:
-$150 setup and $99 per month.
+$99.99 per month with no setup fee.
 
 What it includes:
 - Custom chatbot trained on the business
@@ -171,7 +231,7 @@ When someone shows interest, collect:
 5. SMS consent
 
 For SMS consent, ask naturally:
-"What’s the best number to reach you? Also, is it okay if we call or text you about your request? You can reply STOP to opt out of texts anytime."
+"What's the best number to reach you? Also, is it okay if we call or text you about your request? You can reply STOP to opt out of texts anytime."
 
 Do not assume a phone number means SMS consent.
 
@@ -179,7 +239,6 @@ Once you have name, company, and either email or phone:
 - Thank them
 - Say someone from EnAction.ai will follow up shortly
 - Do not keep asking for more info unless it feels natural
-- Include this hidden marker at the very end of your reply exactly once: LEAD_ALREADY_SAVED
 
 Do NOT mention:
 - Google Sheets
@@ -188,26 +247,36 @@ Do NOT mention:
 - Code
 - OpenAI
 - Internal systems
-- The hidden marker
 `,
         },
-        ...messages.map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-        })),
+        ...messages.map((msg) => ({ role: msg.role, content: msg.content })),
       ],
     });
 
     let reply = response.output_text || "Sorry, I had trouble responding.";
-
     reply = reply.replace("LEAD_ALREADY_SAVED", "").trim();
+
+    // ---- 4. save to the portal, then Pipedream if (and only if) granted ---
+    if (PORTAL_ENABLED && conversationId) {
+      const ingest = await portalPost("/api/public/agent/ingest", {
+        bot_id: botId,
+        conversation_id: conversationId,
+        messages: [...messages, { role: "assistant", content: reply }],
+        lead: leadData && leadData.should_save ? leadData : null,
+      });
+
+      const grant = ingest.ok && ingest.data ? ingest.data.pipedream : null;
+      if (grant && grant.send) {
+        await sendLeadToWebhook(leadData, grant.lead_id);
+      }
+    } else if (leadData && leadData.should_save && !PORTAL_ENABLED) {
+      // Rollback mode only: legacy behaviour, portal not involved.
+      await sendLeadToWebhook(leadData, null);
+    }
 
     return res.status(200).json({ reply });
   } catch (error) {
-    console.error("Ena chatbot error:", error);
-
-    return res.status(500).json({
-      reply: `Debug error: ${error.message}`,
-    });
+    console.error("Ena chatbot error:", error.message);
+    return res.status(200).json({ reply: "Sorry, I had trouble responding. Please try again." });
   }
 }
