@@ -5,7 +5,7 @@ export default function Home() {
     {
       role: "assistant",
       content:
-        "Hi, I’m Ena. I help small businesses turn website visitors into leads, bookings, and follow-ups. What kind of business do you run?",
+        "Hi, I’m Ena, the EnAction AI website agent. I help small businesses turn website conversations into customers. What kind of business do you run?",
     },
   ]);
 
@@ -120,17 +120,17 @@ export default function Home() {
       <section className="mx-auto grid max-w-7xl items-center gap-12 px-6 pb-20 pt-10 md:grid-cols-2 md:pt-20">
         <div>
           <div className="mb-6 inline-flex rounded-full border border-blue-100 bg-white px-4 py-2 text-sm font-medium text-[#2563eb] shadow-sm">
-            AI website chatbots for small businesses
+            Website lead engagement and management
           </div>
 
           <h1 className="max-w-3xl text-5xl font-extrabold leading-tight tracking-tight text-slate-950 md:text-6xl">
-            Turn website visitors into leads, bookings, and follow-ups.
+            Turn website conversations into customers.
           </h1>
 
           <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
-            EnAction.ai builds smart website chatbots that answer questions,
-            capture contact info, help customers take action, and make your
-            business easier to reach 24/7.
+            EnAction gives your business an AI website agent that answers
+            questions, captures leads, and keeps every opportunity organized
+            in one simple dashboard.
           </p>
 
           <div className="mt-8 flex flex-col gap-4 sm:flex-row">
@@ -150,9 +150,9 @@ export default function Home() {
           </div>
 
           <div className="mt-10 grid max-w-xl grid-cols-3 gap-4">
-            <Stat number="24/7" label="Answers" />
-            <Stat number="Lead" label="Capture" />
-            <Stat number="Easy" label="Setup" />
+            <Stat number="Engage" label="24/7" />
+            <Stat number="Capture" label="With context" />
+            <Stat number="Manage" label="In EnAction" />
           </div>
         </div>
 
@@ -227,25 +227,25 @@ export default function Home() {
         <div className="mx-auto max-w-7xl px-6">
           <div className="mb-12 text-center">
             <h2 className="text-3xl font-bold tracking-tight text-slate-950 md:text-4xl">
-              What EnAction does for your business
+              Engage. Capture. Manage.
             </h2>
             <p className="mt-4 text-lg text-slate-600">
-              A simple assistant that works while you do.
+              Ena handles the conversation. EnAction keeps every opportunity organized.
             </p>
           </div>
 
           <div className="grid gap-8 md:grid-cols-3">
             <Feature
-              title="Answers common questions"
-              description="Hours, location, services, pricing, availability — your visitors get instant responses, even after hours."
+               title="Engage"
+               description="Ena answers questions 24/7, learns what each visitor needs, and guides them toward the right next step."
             />
             <Feature
-              title="Captures leads"
-              description="Collects name, phone, email, and what they need so you can follow up with real opportunities."
+               title="Capture"
+               description="Ena naturally collects lead details and preserves the conversation context, so opportunities aren't lost."
             />
             <Feature
-              title="Books and schedules"
-              description="Helps visitors take the next step, whether that’s requesting a quote, booking a call, or leaving a message."
+               title="Manage"
+               description="Review conversations, update lead statuses, add notes, and keep every opportunity organized for follow-up."
             />
           </div>
         </div>
@@ -267,13 +267,13 @@ export default function Home() {
             />
             <Step
               number="2"
-              title="We install the chatbot"
-              description="A small script is added to your site. No redesign needed."
+              title="Add Ena to your website"
+              description="We provide a small piece of code. You or your website provider add it to the site, and we help with setup and configuration."
             />
             <Step
               number="3"
-              title="You follow up"
-              description="Qualified leads arrive with contact info and context, ready for you to close."
+               title="Manage opportunities in EnAction"
+               description="Leads and conversation context appear in your dashboard, ready for statuses, notes, and follow-up."
             />
           </div>
         </div>
@@ -290,7 +290,7 @@ export default function Home() {
 
           <div className="mt-10 rounded-3xl border border-slate-200 bg-white p-8 shadow-xl md:p-12">
             <div className="text-sm font-semibold uppercase tracking-wider text-slate-500">
-              EnAction AI Agent
+              EnAction Platform
             </div>
             <div className="mt-4 flex items-baseline justify-center">
               <span className="text-6xl font-extrabold text-slate-950">
@@ -299,8 +299,9 @@ export default function Home() {
               <span className="ml-2 text-lg text-slate-600">/month</span>
             </div>
             <ul className="mt-8 space-y-3 text-left text-slate-600 md:mx-auto md:max-w-md">
-              <ListItem>Custom AI chatbot trained on your business</ListItem>
-              <ListItem>Lead capture and instant notifications</ListItem>
+              <ListItem>Ena AI website agent trained on your business</ListItem>
+              <ListItem>Lead capture with conversation context</ListItem>
+              <ListItem>Lead management dashboard, statuses, and notes</ListItem>
               <ListItem>Website embed and setup support</ListItem>
               <ListItem>Unlimited conversations</ListItem>
               <ListItem>Ongoing maintenance and updates</ListItem>
@@ -324,19 +325,19 @@ export default function Home() {
           <div className="space-y-6">
             <FAQ
               q="Will this replace my website?"
-              a="No. The chatbot sits on top of your existing site as a small widget."
+               a="No. Ena is added to your existing website as a small chat widget."
             />
             <FAQ
               q="Do I need technical skills?"
-              a="No. We handle installation and training for you."
+              a="No. We provide the code and help with setup and configuration. You or your website provider add it to your site, and we may assist if we have the right website access."
             />
             <FAQ
               q="What happens to the leads?"
               a="They’re captured with contact details and sent to you so you can follow up."
             />
             <FAQ
-              q="Can I change what the chatbot says?"
-              a="Yes. We work with you to set the right tone, answers, and lead capture flow."
+               q="Can I change what Ena says?"
+               a="Yes. We work with you to set the right tone, answers, and lead capture flow."
             />
           </div>
         </div>
